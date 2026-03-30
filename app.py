@@ -131,7 +131,7 @@ with tab2:
             if add_task:
                 if task_name.strip():
                     selected_pet = next(p for p in pets if p.name == selected_pet_name)
-                    selected_pet.add_task(Task(
+                    warning = selected_pet.add_task(Task(
                         name=task_name.strip(),
                         category=category,
                         duration=duration,
@@ -139,7 +139,10 @@ with tab2:
                         frequency=frequency,
                         notes=notes.strip(),
                     ))
-                    st.success(f"Task '{task_name.strip()}' added for {selected_pet_name}!")
+                    if warning:
+                        st.warning(warning)
+                    else:
+                        st.success(f"Task '{task_name.strip()}' added for {selected_pet_name}!")
                     st.session_state.schedule = None
                     st.rerun()
                 else:
@@ -237,9 +240,9 @@ with tab3:
             # Skipped tasks
             if skipped:
                 st.divider()
-                with st.expander(f"⏭ Skipped tasks ({len(skipped)}) — not enough time today"):
-                    for pet, task in skipped:
-                        st.markdown(f"- **[{pet.name}]** {task.name} — {task.duration} min · {task.priority} priority")
+                with st.expander(f"⏭ Skipped tasks ({len(skipped)})"):
+                    for pet, task, reason in skipped:
+                        st.markdown(f"- **[{pet.name}]** {task.name} — {task.duration} min · {task.priority} priority · *{reason}*")
 
             # Full summary
             st.divider()
