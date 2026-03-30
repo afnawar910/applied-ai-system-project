@@ -187,6 +187,92 @@ def test_detect_conflicts_no_overlap():
 
 
 # ---------------------------------------------------------------------------
+# Scheduler — edge cases
+# ---------------------------------------------------------------------------
+
+def test_generate_with_no_pets_returns_empty_schedule():
+    """Owner with no pets should produce an empty schedule with no errors."""
+    owner = Owner(name="Jordan", available_time=60)
+    schedule = Scheduler(owner).generate()
+    assert schedule.get_checklist() == []
+    assert schedule.get_skipped() == []
+
+
+def test_generate_with_pet_but_no_tasks_returns_empty_schedule():
+    """A pet with zero tasks should produce an empty schedule."""
+    owner = Owner(name="Jordan", available_time=60)
+    owner.add_pet(Pet(name="Mochi", species="dog", age=3))
+    schedule = Scheduler(owner).generate()
+    assert schedule.get_checklist() == []
+
+
+def test_two_tasks_at_exact_same_start_time_flagged_as_conflict():
+    """Two tasks for the same pet with identical start_time should conflict."""
+    owner = Owner(name="Jordan", available_time=120)
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    owner.add_pet(pet)
+    pet.add_task(Task(name="Walk",      category="walk",    duration=20, priority="high",   start_time="09:00"))
+    pet.add_task(Task(name="Breakfast", category="feeding", duration=10, priority="high",   start_time="09:00"))
+    warnings = Scheduler(owner).detect_conflicts(owner.get_all_tasks())
+    assert len(warnings) >= 1
+
+
+def test_checklist_reflects_completion_state():
+    """Tasks marked done should show is_completed=True in the schedule checklist."""
+    owner = Owner(name="Jordan", available_time=60)
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    owner.add_pet(pet)
+    task = Task(name="Walk", category="walk", duration=20, priority="high", frequency="daily")
+    pet.add_task(task)
+    schedule = Scheduler(owner).generate()
+    checklist = schedule.get_checklist()
+    assert len(checklist) == 1
+    _, scheduled_task = checklist[0]
+    scheduled_task.mark_done()
+    assert scheduled_task.is_completed is True
+
+
+def test_all_tasks_skipped_when_time_zero():
+    """Owner with 0 available minutes should skip all non-high-priority tasks."""
+    owner = Owner(name="Jordan", available_time=0)
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    owner.add_pet(pet)
+    pet.add_task(Task(name="Walk",      category="walk",    duration=20, priority="medium"))
+    pet.add_task(Task(name="Grooming",  category="grooming",duration=15, priority="low"))
+    schedule = Scheduler(owner).generate()
+    assert len(schedule.get_checklist()) == 0
+    assert len(schedule.get_skipped()) == 2
+
+
+def test_adding_multiple_pets_all_tasks_collected():
+    """get_all_tasks() should aggregate tasks across all pets."""
+    owner = Owner(name="Jordan", available_time=120)
+    mochi = Pet(name="Mochi", species="dog", age=3)
+    luna  = Pet(name="Luna",  species="cat", age=5)
+    owner.add_pet(mochi)
+    owner.add_pet(luna)
+    mochi.add_task(Task(name="Walk",      category="walk",    duration=20, priority="high"))
+    mochi.add_task(Task(name="Breakfast", category="feeding", duration=10, priority="high"))
+    luna.add_task(Task(name="Cat dinner", category="feeding", duration=5,  priority="high"))
+    assert len(owner.get_all_tasks()) == 3
+
+
+def test_advance_recurring_replaces_task_on_pet():
+    """advance_recurring should remove the completed task and add the next one."""
+    owner = Owner(name="Jordan", available_time=60)
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    owner.add_pet(pet)
+    task = Task(name="Walk", category="walk", duration=20, priority="high", frequency="daily")
+    pet.add_task(task)
+    task.mark_done()
+    Scheduler(owner).advance_recurring(pet, task)
+    tasks = pet.get_tasks()
+    assert len(tasks) == 1
+    assert tasks[0].is_completed is False
+    assert tasks[0].due_date > date.today()
+
+
+# ---------------------------------------------------------------------------
 # Scheduler — time budget
 # ---------------------------------------------------------------------------
 
