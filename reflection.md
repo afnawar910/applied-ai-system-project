@@ -67,8 +67,8 @@ The most effective prompts were specific and scoped: *"Based on this skeleton, i
 
 **b. Judgment and verification**
 
-When AI suggested making `Scheduler` a method on `Owner` (so the owner could schedule itself), the suggestion was rejected. Having a standalone `Scheduler` class keeps responsibilities separate — the Owner models data, the Scheduler models the algorithm. Mixing them would have made unit testing harder (you would need a full Owner object just to test one sorting function). The suggestion was evaluated by asking: *"Can I test this in isolation without constructing an Owner?"* — the answer was no, so the standalone design was kept.
-
+When AI suggested making `Scheduler` a method on `Owner` (so the owner could schedule itself),I rejected the suggestion
+ Having a standalone `Scheduler` class keeps responsibilities separate — the Owner models data, the Scheduler models the algorithm. Mixing them would have made unit testing harder (you would need a full Owner object just to test one sorting function). The suggestion was evaluated by asking: *"Can I test this in isolation without constructing an Owner?"* 
 ---
 
 ## 4. Testing and Verification
@@ -95,4 +95,4 @@ The recurring task system is simple (daily = every day, weekly = every Monday). 
 
 **c. Key takeaway**
 
-AI tools are most useful when you remain the architect. Asking AI to generate an entire system produces code that works but often reflects generic patterns rather than your specific design decisions. Asking AI to implement one method at a time — based on a design you already own — produces code that fits your system and is easy to evaluate and test. The lead architect's job is to make decisions that AI cannot: what belongs where, what the right tradeoff is, and when a "more Pythonic" suggestion should be rejected for readability.
+AI tools are most useful when you remain the architect. Asking AI to generate an entire system produces code that works but often reflects generic patterns rather than your specific design decisions. 
