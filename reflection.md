@@ -38,8 +38,9 @@ Five classes: `Pet`, `Task`, `Owner`, `Schedule`, and `Scheduler`.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The conflict detector only flags overlaps between tasks belonging to the **same pet**. Two tasks assigned to different pets that run at the same time are not flagged, even though a single owner can only do one thing at a time.
+
+This tradeoff is reasonable for the current scenario because the typical user has one or two pets with mostly independent routines (e.g., feeding one pet while the other is resting). Adding cross-pet conflict detection would increase complexity significantly — requiring the scheduler to model the owner's attention as a shared resource — and would produce false positives for tasks that genuinely can be interleaved (like leaving food out for both pets at the same time). A future iteration could add an optional "owner is sole caretaker" mode that enables cross-pet checks.
 
 ---
 

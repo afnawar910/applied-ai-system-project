@@ -22,6 +22,17 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+PawPal+ includes four algorithms that make the daily planner more intelligent:
+
+| Feature | How it works |
+|---------|-------------|
+| **Sort by time** | Tasks with a `start_time` (HH:MM) are sorted chronologically using a lambda key. Tasks without a time are pushed to the end. |
+| **Filter tasks** | `Scheduler.filter_tasks()` accepts `pet_name`, `status` ("completed"/"incomplete"), and `category` to return a targeted subset of tasks. |
+| **Recurring tasks** | `frequency="daily"` tasks advance to the next day via `timedelta(days=1)` when completed; `weekly` tasks advance by 7 days. `as-needed` tasks are never auto-scheduled. |
+| **Conflict detection** | `Scheduler.detect_conflicts()` checks for overlapping time windows within the same pet using the formula `A.start < B.end AND B.start < A.end`, returning human-readable warnings instead of crashing. |
+
 ## Getting started
 
 ### Setup
