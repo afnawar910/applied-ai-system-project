@@ -9,31 +9,19 @@ from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# Data classes
+# Task
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Pet:
-    """Represents the pet whose care is being planned."""
-    name: str
-    species: str      # e.g. "dog", "cat", "rabbit"
-    age: int          # years
-
-    def get_care_needs(self) -> list[str]:
-        """Return species-specific default care categories."""
-        # TODO: implement species-based defaults
-        return []
-
-
-@dataclass
 class Task:
-    """A single pet care task that can appear in a daily schedule."""
+    """A single pet care activity."""
     name: str
-    category: str     # "walk", "feeding", "meds", "grooming", "enrichment"
-    duration: int     # minutes
-    priority: str     # "high", "medium", "low"
+    category: str        # "walk", "feeding", "meds", "grooming", "enrichment"
+    duration: int        # minutes per session
+    priority: str        # "high", "medium", "low"
+    frequency: str = "daily"   # "daily", "weekly", "as-needed"
     is_completed: bool = False
-    is_urgent: bool = False   # reminder flag — surfaces an alert in the UI
+    is_urgent: bool = False    # reminder flag — shown as alert in the UI
     notes: str = ""
 
     def mark_done(self) -> None:
@@ -41,38 +29,82 @@ class Task:
         self.is_completed = True
 
     def mark_undone(self) -> None:
-        """Unmark this task."""
+        """Unmark this task (e.g. user accidentally checked it off)."""
         self.is_completed = False
 
 
 # ---------------------------------------------------------------------------
-# Owner
+# Pet — owns its own task list
 # ---------------------------------------------------------------------------
 
-class Owner:
-    """Represents the pet owner and their daily availability."""
+class Pet:
+    """Represents a pet and the care tasks associated with it."""
 
-    def __init__(self, name: str, available_time: int, pet: Pet) -> None:
+    def __init__(self, name: str, species: str, age: int) -> None:
         self.name = name
-        self.available_time = available_time  # minutes per day
-        self.pet = pet
+        self.species = species   # e.g. "dog", "cat", "rabbit"
+        self.age = age           # years
         self._tasks: list[Task] = []
 
     def add_task(self, task: Task) -> None:
-        """Add a task to the owner's task list."""
+        """Add a care task for this pet."""
         self._tasks.append(task)
 
     def remove_task(self, task: Task) -> None:
-        """Remove a task from the owner's task list."""
+        """Remove a care task from this pet."""
         self._tasks.remove(task)
 
     def get_tasks(self) -> list[Task]:
-        """Return a copy of the current task list."""
+        """Return this pet's task list."""
         return list(self._tasks)
+
+    def get_care_needs(self) -> list[str]:
+        """Return species-specific default task categories."""
+        defaults = {
+            "dog": ["walk", "feeding", "grooming", "enrichment"],
+            "cat": ["feeding", "grooming", "enrichment"],
+            "rabbit": ["feeding", "enrichment", "grooming"],
+        }
+        return defaults.get(self.species.lower(), ["feeding"])
+
+    def __repr__(self) -> str:
+        return f"Pet(name={self.name!r}, species={self.species!r}, age={self.age})"
 
 
 # ---------------------------------------------------------------------------
-# Schedule
+# Owner — manages multiple pets
+# ---------------------------------------------------------------------------
+
+class Owner:
+    """Represents the pet owner, their daily availability, and their pets."""
+
+    def __init__(self, name: str, available_time: int) -> None:
+        self.name = name
+        self.available_time = available_time   # total minutes available per day
+        self._pets: list[Pet] = []
+
+    def add_pet(self, pet: Pet) -> None:
+        """Register a pet under this owner."""
+        self._pets.append(pet)
+
+    def remove_pet(self, pet: Pet) -> None:
+        """Remove a pet from this owner."""
+        self._pets.remove(pet)
+
+    def get_pets(self) -> list[Pet]:
+        """Return the list of pets."""
+        return list(self._pets)
+
+    def get_all_tasks(self) -> list[tuple[Pet, Task]]:
+        """Return every task across all pets as (pet, task) pairs."""
+        return [(pet, task) for pet in self._pets for task in pet.get_tasks()]
+
+    def __repr__(self) -> str:
+        return f"Owner(name={self.name!r}, available_time={self.available_time})"
+
+
+# ---------------------------------------------------------------------------
+# Schedule — the daily output
 # ---------------------------------------------------------------------------
 
 class Schedule:
@@ -80,35 +112,57 @@ class Schedule:
 
     def __init__(self, plan_date: Optional[date] = None) -> None:
         self.plan_date = plan_date or date.today()
-        self._tasks: list[Task] = []
+        self._items: list[tuple[Pet, Task]] = []   # (pet, task) pairs
+        self._skipped: list[tuple[Pet, Task]] = []  # tasks that didn't fit
 
     @property
     def total_time_used(self) -> int:
-        """Total minutes consumed by all tasks in this schedule."""
-        return sum(t.duration for t in self._tasks)
+        """Total minutes consumed by all scheduled tasks."""
+        return sum(task.duration for _, task in self._items)
 
-    def add_task(self, task: Task) -> None:
-        self._tasks.append(task)
+    def add_item(self, pet: Pet, task: Task) -> None:
+        self._items.append((pet, task))
 
-    def remove_task(self, task: Task) -> None:
-        self._tasks.remove(task)
+    def skip_item(self, pet: Pet, task: Task) -> None:
+        self._skipped.append((pet, task))
 
-    def get_checklist(self) -> list[Task]:
-        """Return tasks as an ordered checklist with completion state."""
-        return list(self._tasks)
+    def get_checklist(self) -> list[tuple[Pet, Task]]:
+        """Return scheduled tasks as an ordered checklist."""
+        return list(self._items)
+
+    def get_skipped(self) -> list[tuple[Pet, Task]]:
+        """Return tasks that were dropped due to time constraints."""
+        return list(self._skipped)
 
     def get_summary(self) -> str:
-        """Return a human-readable summary of the schedule."""
-        # TODO: implement summary with reasoning
-        return ""
+        """Return a human-readable explanation of the schedule."""
+        lines = [f"Daily plan for {self.plan_date} — {self.total_time_used} min scheduled\n"]
+
+        if self._items:
+            lines.append("Scheduled:")
+            for pet, task in self._items:
+                urgent = " *** REMINDER ***" if task.is_urgent else ""
+                lines.append(
+                    f"  [{pet.name}] {task.name} ({task.duration} min, {task.priority} priority){urgent}"
+                )
+
+        if self._skipped:
+            lines.append("\nNot scheduled (time ran out):")
+            for pet, task in self._skipped:
+                lines.append(f"  [{pet.name}] {task.name} ({task.duration} min, {task.priority} priority)")
+
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
-# Scheduler — standalone engine
+# Scheduler — standalone brain
 # ---------------------------------------------------------------------------
 
 class Scheduler:
-    """Generates a daily Schedule from an Owner's task list and constraints."""
+    """
+    Retrieves all tasks from an Owner's pets, sorts them by priority,
+    and fits as many as possible within the owner's available time.
+    """
 
     PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -117,10 +171,37 @@ class Scheduler:
 
     def generate(self) -> Schedule:
         """
-        Sort tasks by priority, fit as many as possible within available time.
-        High-priority tasks that exceed the time budget are still included
-        and flagged as urgent (is_urgent=True).
+        Build a Schedule for today:
+        1. Collect all (pet, task) pairs from every pet the owner has.
+        2. Sort by priority (high first), then by duration (shorter first as tiebreak).
+        3. Fit tasks into available time budget.
+        4. High-priority tasks that still don't fit are included anyway and flagged urgent.
+        5. Everything else that doesn't fit is recorded as skipped with a reason.
         """
-        # TODO: implement scheduling logic
         schedule = Schedule()
+        all_tasks = self.owner.get_all_tasks()
+
+        # Sort: priority first, then shorter tasks first as a tiebreak
+        sorted_tasks = sorted(
+            all_tasks,
+            key=lambda pt: (self.PRIORITY_ORDER.get(pt[1].priority, 99), pt[1].duration),
+        )
+
+        time_remaining = self.owner.available_time
+
+        for pet, task in sorted_tasks:
+            task.is_urgent = False  # reset before deciding
+
+            if task.duration <= time_remaining:
+                schedule.add_item(pet, task)
+                time_remaining -= task.duration
+            elif task.priority == "high":
+                # Must-do task: include it and flag as urgent reminder
+                task.is_urgent = True
+                schedule.add_item(pet, task)
+                # Note: we allow going over budget for high-priority tasks
+                time_remaining -= task.duration
+            else:
+                schedule.skip_item(pet, task)
+
         return schedule
