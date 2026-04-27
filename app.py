@@ -1,4 +1,7 @@
+from datetime import date, datetime, timedelta
+
 import streamlit as st
+from care_ai import CareCoach
 from pawpal_system import Task, Pet, Owner, Scheduler
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="wide")
@@ -12,6 +15,45 @@ def _valid_time(value: str) -> bool:
     except (ValueError, AttributeError):
         return False
 
+
+def _public_care_note_text(text: str) -> str:
+    """Hide internal RAG metadata from the user-facing note."""
+    lines = [line for line in text.splitlines() if not line.startswith("Sources used:")]
+    return "\n".join(lines).strip()
+
+
+def _time_to_minutes(value: str) -> int:
+    """Convert HH:MM into minutes after midnight."""
+    hour, minute = map(int, value.split(":"))
+    return hour * 60 + minute
+
+
+def _task_reminder_status(task: Task, now_minutes: int | None = None) -> str:
+    """Return a reminder status for incomplete timed tasks."""
+    if task.is_completed or not task.start_time:
+        return ""
+    if now_minutes is None:
+        now = datetime.now()
+        now_minutes = now.hour * 60 + now.minute
+
+    start_minutes = _time_to_minutes(task.start_time)
+    minutes_until = start_minutes - now_minutes
+    end_minutes = start_minutes + task.duration
+
+    if start_minutes <= now_minutes <= end_minutes:
+        return "due now"
+    if minutes_until < 0:
+        return "overdue"
+    if minutes_until <= 30:
+        return f"starts in {minutes_until} min"
+    return ""
+
+
+def _task_reminder_message(pet: Pet, task: Task, status: str) -> str:
+    """Build a readable reminder message for the user."""
+    time_text = f" at {task.start_time}" if task.start_time else ""
+    return f"{task.name} for {pet.name}{time_text}: {status}"
+
 # ---------------------------------------------------------------------------
 # Session state init
 # ---------------------------------------------------------------------------
@@ -21,6 +63,8 @@ if "setup_done" not in st.session_state:
     st.session_state.setup_done = False
 if "schedule" not in st.session_state:
     st.session_state.schedule = None
+if "care_note" not in st.session_state:
+    st.session_state.care_note = None
 
 # ---------------------------------------------------------------------------
 # Header
@@ -70,14 +114,14 @@ with st.sidebar:
 
     st.divider()
     if st.button("🔄 Start over", use_container_width=True):
-        for key in ["owner", "setup_done", "schedule"]:
+        for key in ["owner", "setup_done", "schedule", "care_note"]:
             del st.session_state[key]
         st.rerun()
 
 # ---------------------------------------------------------------------------
 # Main tabs
 # ---------------------------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["🐶 My Pets", "📋 Tasks", "📅 Daily Schedule"])
+tab1, tab2, tab3, tab4 = st.tabs(["🐶 My Pets", "📋 Tasks", "📅 Daily Schedule", "🗓 Upcoming"])
 
 # ── TAB 1: Pets ─────────────────────────────────────────────────────────────
 with tab1:
@@ -96,6 +140,7 @@ with tab1:
                 owner.add_pet(Pet(name=pet_name.strip(), species=species, age=age))
                 st.success(f"{pet_name.strip()} added!")
                 st.session_state.schedule = None
+                st.session_state.care_note = None
                 st.rerun()
             else:
                 st.warning("Please enter a pet name.")
@@ -116,6 +161,7 @@ with tab1:
                 if st.button(f"Remove {pet.name}", key=f"remove_pet_{i}"):
                     owner.remove_pet(pet)
                     st.session_state.schedule = None
+                    st.session_state.care_note = None
                     st.rerun()
     else:
         st.info("No pets yet — add one above to get started.")
@@ -137,7 +183,8 @@ with tab2:
             with c2:
                 duration  = st.slider("Duration (minutes)", 5, 120, 20, step=5)
                 priority  = st.radio("Priority", ["high", "medium", "low"], horizontal=True)
-                frequency = st.selectbox("Frequency", ["daily", "weekly", "as-needed"])
+                frequency = st.selectbox("Frequency", ["daily", "weekly", "biweekly", "as-needed"])
+                due_date = st.date_input("First due date", value=date.today())
             notes    = st.text_area("Notes (optional)", placeholder="Any extra details...")
             add_task = st.form_submit_button("➕ Add task", use_container_width=True)
 
@@ -156,6 +203,7 @@ with tab2:
                             priority=priority,
                             frequency=frequency,
                             start_time=clean_time,
+                            due_date=due_date,
                             notes=notes.strip(),
                         ))
                         if conflict_warning:
@@ -163,6 +211,7 @@ with tab2:
                         else:
                             st.success(f"Task '{task_name.strip()}' added for {selected_pet_name}!")
                         st.session_state.schedule = None
+                        st.session_state.care_note = None
                         st.rerun()
                 else:
                     st.warning("Please enter a task name.")
@@ -205,14 +254,23 @@ with tab2:
                         for idx, (_, task) in enumerate(pet_tasks):
                             c1, c2, c3, c4, c5, c6 = st.columns([3, 1, 2, 2, 2, 1])
                             c1.write(f"**{task.name}**")
+                            task_key = f"task_done_{pet.name}_{idx}_{task.name}"
+                            checked = c1.checkbox("Done", value=task.is_completed, key=task_key)
+                            if checked != task.is_completed:
+                                if checked:
+                                    task.mark_done()
+                                else:
+                                    task.mark_undone()
                             c2.write(f"{'✅' if task.is_completed else '⬜'}")
                             c3.write(f"⏱ {task.duration} min" + (f" @ {task.start_time}" if task.start_time else ""))
                             priority_badge = {"high": "🔴 high", "medium": "🟡 medium", "low": "🟢 low"}
                             c4.write(priority_badge.get(task.priority, task.priority))
                             c5.write(f"🔁 {task.frequency}")
+                            c5.caption(f"Due {task.due_date}")
                             if c6.button("✕", key=f"del_{pet.name}_{idx}_{task.name}"):
                                 pet.remove_task(task)
                                 st.session_state.schedule = None
+                                st.session_state.care_note = None
                                 st.rerun()
                             if task.notes:
                                 c1.caption(f"📝 {task.notes}")
@@ -239,10 +297,18 @@ with tab3:
 
         if st.button("✨ Generate my daily schedule", use_container_width=True, type="primary"):
             for _, task in all_tasks:
-                task.mark_undone()
                 task.is_urgent = False
             scheduler = Scheduler(owner)
             st.session_state.schedule = scheduler.generate()
+            st.session_state.care_note = CareCoach().generate(owner, st.session_state.schedule)
+            active_reminders = [
+                _task_reminder_message(pet, task, status)
+                for pet, task in st.session_state.schedule.get_checklist()
+                for status in [_task_reminder_status(task)]
+                if status
+            ]
+            if active_reminders:
+                st.toast("Reminder: " + active_reminders[0])
 
         schedule = st.session_state.schedule
         if schedule:
@@ -267,7 +333,20 @@ with tab3:
                     st.markdown(f"- **{task.name}** for {pet.name} ({task.duration} min)")
                 st.divider()
 
-            # 3. Time budget summary
+            # 3. Active task reminders
+            reminders = [
+                _task_reminder_message(pet, task, status)
+                for pet, task in scheduled
+                for status in [_task_reminder_status(task)]
+                if status
+            ]
+            if reminders:
+                st.warning("Task reminders")
+                for reminder in reminders:
+                    st.markdown(f"- {reminder}")
+                st.divider()
+
+            # 4. Time budget summary
             used  = schedule.total_time_used
             avail = owner.available_time
             col1, col2, col3 = st.columns(3)
@@ -282,7 +361,7 @@ with tab3:
 
             st.divider()
 
-            # 4. Interactive checklist (sorted by start_time via scheduler)
+            # 5. Interactive checklist (sorted by start_time via scheduler)
             st.subheader("✅ Today's checklist")
             for i, (pet, task) in enumerate(scheduled):
                 col1, col2 = st.columns([7, 1])
@@ -306,19 +385,71 @@ with tab3:
                 st.markdown(f"**Progress: {done}/{total} tasks completed**")
                 st.progress(done / total)
 
-            # 5. Skipped tasks
+            # 6. Skipped tasks
             if skipped:
                 st.divider()
                 with st.expander(f"⏭ Skipped tasks ({len(skipped)})"):
-                    st.caption("These tasks were not scheduled today. Reasons are shown below.")
+                    st.caption("These tasks were not scheduled today. You can still mark them done manually.")
                     for pet, task, reason in skipped:
-                        col1, col2 = st.columns([5, 3])
+                        col1, col2, col3 = st.columns([5, 3, 2])
                         col1.markdown(f"**[{pet.name}]** {task.name} ({task.duration} min · {task.priority})")
                         col2.caption(reason)
+                        skipped_key = f"skipped_done_{pet.name}_{task.name}_{reason}"
+                        checked = col3.checkbox("Done", value=task.is_completed, key=skipped_key)
+                        if checked != task.is_completed:
+                            if checked:
+                                task.mark_done()
+                            else:
+                                task.mark_undone()
 
-            # 6. Full text summary
+            # 7. RAG-powered care notes
+            care_note = st.session_state.care_note
+            if care_note:
+                st.divider()
+                st.subheader("AI Care Notes")
+                st.markdown(_public_care_note_text(care_note.text))
+
+            # 8. Full text summary
             st.divider()
             with st.expander("📋 Full schedule summary"):
                 st.text(schedule.get_summary())
+
+# ── TAB 4: Upcoming calendar ────────────────────────────────────────────────
+with tab4:
+    pets = owner.get_pets()
+    all_tasks = owner.get_all_tasks()
+
+    if not pets:
+        st.info("Add a pet and some tasks first.")
+    elif not all_tasks:
+        st.info("Add tasks with a first due date to see upcoming care days.")
+    else:
+        st.subheader("Upcoming care calendar")
+        st.caption("Daily, weekly, and biweekly tasks appear on the days they are due.")
+
+        days_to_show = st.slider("Days to show", 7, 28, 14, step=7)
+        scheduler = Scheduler(owner)
+        occurrences = scheduler.upcoming_occurrences(days=days_to_show)
+        by_day = {date.today() + timedelta(days=offset): [] for offset in range(days_to_show)}
+        for occurrence_date, pet, task in occurrences:
+            by_day.setdefault(occurrence_date, []).append((pet, task))
+
+        for week_start in range(0, days_to_show, 7):
+            cols = st.columns(7)
+            for offset, col in enumerate(cols):
+                day = date.today() + timedelta(days=week_start + offset)
+                day_tasks = by_day.get(day, [])
+                with col:
+                    st.markdown(f"**{day.strftime('%a')}**")
+                    st.caption(day.strftime("%b %d"))
+                    if not day_tasks:
+                        st.write("No tasks")
+                    else:
+                        for pet, task in day_tasks:
+                            time_text = f" @ {task.start_time}" if task.start_time else ""
+                            status = "done" if task.is_completed else task.priority
+                            st.markdown(f"- **{pet.name}**: {task.name}{time_text}")
+                            st.caption(f"{task.frequency} · {status}")
+            st.divider()
 
 

@@ -4,7 +4,7 @@ All core classes live here; app.py imports from this module.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 
@@ -37,7 +37,7 @@ class Task:
     category: str        # "walk", "feeding", "meds", "grooming", "enrichment", "other"
     duration: int        # minutes per session
     priority: str        # "high", "medium", "low"
-    frequency: str = "daily"       # "daily", "weekly", "as-needed"
+    frequency: str = "daily"       # "daily", "weekly", "biweekly", "as-needed"
     start_time: str = ""           # optional HH:MM string for time-based sorting/conflicts
     due_date: Optional[date] = None  # defaults to today on first use
     is_completed: bool = False
@@ -68,6 +68,8 @@ class Task:
             next_due = date.today() + timedelta(days=1)
         elif self.frequency == "weekly":
             next_due = date.today() + timedelta(weeks=1)
+        elif self.frequency == "biweekly":
+            next_due = date.today() + timedelta(weeks=2)
         else:
             next_due = self.due_date   # as-needed: no automatic next date
 
@@ -360,15 +362,37 @@ class Scheduler:
     def _is_due_today(self, task: Task) -> bool:
         """
         Decide whether a task is due in today's schedule based on frequency.
-          - daily:     always due
-          - weekly:    due only on Mondays (weekday 0)
+          - daily:     due every day starting on due_date
+          - weekly:    due every 7 days starting on due_date
+          - biweekly:  due every 14 days starting on due_date
           - as-needed: never auto-scheduled
         """
+        return self.is_due_on(task, date.today())
+
+    def is_due_on(self, task: Task, target_date: date) -> bool:
+        """Return True if a recurring task is due on target_date."""
+        if task.frequency == "as-needed":
+            return False
+        if task.due_date and target_date < task.due_date:
+            return False
         if task.frequency == "daily":
             return True
         if task.frequency == "weekly":
-            return datetime.today().weekday() == 0
+            return task.due_date is not None and (target_date - task.due_date).days % 7 == 0
+        if task.frequency == "biweekly":
+            return task.due_date is not None and (target_date - task.due_date).days % 14 == 0
         return False
+
+    def upcoming_occurrences(self, days: int = 14) -> list[tuple[date, Pet, Task]]:
+        """Return recurring task occurrences over the next number of days."""
+        today = date.today()
+        occurrences: list[tuple[date, Pet, Task]] = []
+        for offset in range(days):
+            target_date = today + timedelta(days=offset)
+            for pet, task in self.owner.get_all_tasks():
+                if self.is_due_on(task, target_date):
+                    occurrences.append((target_date, pet, task))
+        return occurrences
 
     # -------------------------------------------------------------------------
     # Conflict check helper (for UI pre-flight check)

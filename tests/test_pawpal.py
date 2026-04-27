@@ -46,6 +46,13 @@ def test_next_occurrence_weekly_advances_seven_days():
     assert next_task.due_date == date.today() + timedelta(weeks=1)
 
 
+def test_next_occurrence_biweekly_advances_fourteen_days():
+    """A biweekly task's next occurrence should be due in 14 days."""
+    task = Task(name="Medication", category="meds", duration=5, priority="high", frequency="biweekly")
+    next_task = task.next_occurrence()
+    assert next_task.due_date == date.today() + timedelta(weeks=2)
+
+
 def test_next_occurrence_as_needed_unchanged():
     """An as-needed task should not advance its due_date."""
     today = date.today()
@@ -298,3 +305,42 @@ def test_high_priority_task_always_scheduled():
     schedule = Scheduler(owner).generate()
     scheduled_names = [t.name for _, t in schedule.get_checklist()]
     assert "Meds" in scheduled_names
+
+
+def test_weekly_task_uses_due_date_for_today_schedule():
+    """A weekly task should only schedule on its due date cycle."""
+    owner = Owner(name="Jordan", available_time=30)
+    pet = Pet(name="Mochi", species="dog", age=3)
+    owner.add_pet(pet)
+    pet.add_task(Task(
+        name="Brush",
+        category="grooming",
+        duration=10,
+        priority="medium",
+        frequency="weekly",
+        due_date=date.today() + timedelta(days=1),
+    ))
+
+    schedule = Scheduler(owner).generate()
+    assert schedule.get_checklist() == []
+    assert len(schedule.get_skipped()) == 1
+
+
+def test_upcoming_occurrences_includes_biweekly_due_dates():
+    """Calendar data should include biweekly tasks every 14 days."""
+    owner = Owner(name="Jordan", available_time=30)
+    pet = Pet(name="Mochi", species="dog", age=3)
+    owner.add_pet(pet)
+    pet.add_task(Task(
+        name="Flea meds",
+        category="meds",
+        duration=5,
+        priority="high",
+        frequency="biweekly",
+        due_date=date.today(),
+    ))
+
+    occurrences = Scheduler(owner).upcoming_occurrences(days=15)
+    dates = [occurrence_date for occurrence_date, _, _ in occurrences]
+    assert date.today() in dates
+    assert date.today() + timedelta(days=14) in dates
