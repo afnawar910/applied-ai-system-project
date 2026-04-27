@@ -292,3 +292,6 @@ This project taught me that building with AI is not just about generating text. 
 I also learned the importance of separating user experience from developer evidence. The app needs logs, tests, and reliability checks to be trustworthy, but the user should see a clean care plan, reminders, and helpful guidance rather than raw implementation details.
 
 Overall, PawPal+ became a practical example of human-centered AI: deterministic scheduling handles the high-stakes structure, RAG adds contextual explanation, and testing gives confidence that the system behaves consistently.
+![alt text](image-2.png)
+![alt text](image-3.png)
+![alt text](image-4.png)
